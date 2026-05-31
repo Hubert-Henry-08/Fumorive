@@ -1,0 +1,99 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 30px; color: #333; }
+        h1 { color: #4f46e5; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 30px; text-align: center; }
+        h2 { color: #334155; margin-top: 30px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; }
+        h3 { color: #475569; }
+        code { background-color: #f1f5f9; padding: 3px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 0.9em; }
+        pre { background-color: #0f172a; color: #f8fafc; padding: 20px; border-radius: 8px; overflow-x: auto; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        pre code { background-color: transparent; color: inherit; padding: 0; }
+        table { border-collapse: collapse; width: 100%; margin: 25px 0; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); }
+        th, td { border: 1px solid #e2e8f0; padding: 15px; text-align: left; }
+        th { background-color: #f8fafc; font-weight: 600; color: #475569; }
+        blockquote { border-left: 4px solid #4f46e5; margin: 20px 0; padding: 15px 20px; background-color: #eff6ff; border-radius: 0 8px 8px 0; }
+        a { color: #3b82f6; text-decoration: none; font-weight: 500; }
+        ul, ol { padding-left: 20px; }
+        li { margin-bottom: 8px; }
+        hr { border: 0; height: 1px; background: #e2e8f0; margin: 30px 0; }
+    </style>
+    </head>
+    <body>
+    <h1>🧠 Fumorive EEG Server — Panduan Setup</h1>
+<p>Package ini digunakan untuk mengirimkan data EEG dari headset <strong>Muse 2</strong> ke backend Fumorive secara real-time.</p>
+<hr />
+<h2>✅ Persyaratan</h2>
+<ul>
+<li>Windows 10 / 11</li>
+<li>Python <strong>3.10</strong> (wajib, versi lain mungkin tidak kompatibel)</li>
+<li>Headset <strong>Muse 2</strong> + Bluetooth aktif</li>
+<li>Koneksi internet</li>
+</ul>
+<p><strong>Download Python 3.10:</strong> https://www.python.org/downloads/release/python-3100/</p>
+<blockquote>
+<p>Saat install, centang ✅ <strong>"Add Python to PATH"</strong></p>
+</blockquote>
+<hr />
+<h2>🚀 Cara Penggunaan</h2>
+<h3>Langkah 1 — Setup (Hanya pertama kali)</h3>
+<p>Buka <strong>PowerShell</strong> di folder ini, lalu jalankan:</p>
+<p><code>powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+.\setup_venv.ps1</code></p>
+<p>Script ini akan menginstall semua dependensi otomatis.</p>
+<hr />
+<h3>Langkah 2 — Jalankan EEG Server</h3>
+<p>Cukup double-click file:</p>
+<p><code>start_eeg.bat</code></p>
+<p>Server akan:
+1. Menyalakan Muse 2 LSL stream
+2. Meminta kamu memasukkan <strong>Session ID</strong> dari web Fumorive
+3. Mulai mengirim data EEG secara real-time</p>
+<hr />
+<h3>Langkah 3 — Dapatkan Session ID</h3>
+<ol>
+<li>Buka <a href="https://fumorive.app">fumorive.app</a></li>
+<li>Login dengan akun kamu</li>
+<li>Klik <strong>"Mulai Sesi Baru"</strong></li>
+<li>Salin <strong>Session ID</strong> yang muncul</li>
+<li>Paste ke terminal EEG Server</li>
+</ol>
+<hr />
+<h2>❓ Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Masalah</th>
+<th>Solusi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>venv tidak ditemukan</code></td>
+<td>Jalankan <code>setup_venv.ps1</code> terlebih dahulu</td>
+</tr>
+<tr>
+<td><code>Muse 2 tidak terdeteksi</code></td>
+<td>Pastikan Bluetooth aktif &amp; Muse 2 dinyalakan</td>
+</tr>
+<tr>
+<td><code>Connection refused</code></td>
+<td>Pastikan koneksi internet aktif</td>
+</tr>
+<tr>
+<td><code>Session ID invalid</code></td>
+<td>Salin ulang Session ID dari web Fumorive</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>📦 Verifikasi Koneksi EEG Stream</h2>
+<p>Untuk mengecek apakah Muse 2 sudah terdeteksi sebelum menjalankan server:</p>
+<p><code>powershell
+.\venv310\Scripts\python.exe check_stream.py</code></p>
+    </body>
+    </html>
+    
