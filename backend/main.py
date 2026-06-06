@@ -234,13 +234,25 @@ async def log_requests(request: Request, call_next):
 # 3. CORS Middleware (added LAST = processed FIRST!)
 # This must come after all @app.middleware decorators
 # Note: Cannot use ["*"] with allow_credentials=True
+#
+# allow_origin_regex matches all Vercel preview / branch deploy URLs
+# so you don't have to list every preview URL manually.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https://fumorive(-[a-z0-9-]+)?\.vercel\.app",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     expose_headers=["X-Request-ID", "X-Process-Time"],
+)
+
+logger.info(
+    "CORS configured",
+    extra={
+        "explicit_origins": settings.CORS_ORIGINS,
+        "origin_regex": r"https://fumorive(-[a-z0-9-]+)?\.vercel\.app",
+    },
 )
 
 

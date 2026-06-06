@@ -48,6 +48,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         response: Response = await call_next(request)
 
+        # Skip security headers for CORS preflight requests — let
+        # CORSMiddleware handle OPTIONS responses without interference.
+        if request.method == "OPTIONS":
+            return response
+
         is_docs = request.url.path in self._DOCS_PATHS
 
         response.headers["X-Content-Type-Options"]  = "nosniff"

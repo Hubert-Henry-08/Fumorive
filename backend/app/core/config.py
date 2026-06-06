@@ -3,7 +3,9 @@ Application Configuration
 Environment variables and settings for Fumorive Backend
 """
 
+import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 from typing import List
 
 
@@ -49,6 +51,30 @@ class Settings(BaseSettings):
         "https://fumorive-git-main-apypzs-projects.vercel.app",   # Vercel main branch
     ]
 
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """
+        Accept CORS_ORIGINS as:
+          - A Python list (already parsed)
+          - A JSON array string:  '["http://a.com","http://b.com"]'
+          - A comma-separated string: 'http://a.com,http://b.com'
+        Railway and other PaaS set env vars as plain strings, so both
+        formats must be handled to prevent silent CORS misconfiguration.
+        """
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    pass
+            # Comma-separated fallback
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
     # TimescaleDB Settings
     TIMESCALE_CHUNK_INTERVAL: str = "1 day"
 
@@ -81,3 +107,4 @@ class Settings(BaseSettings):
 
 # Create settings instance
 settings = Settings()
+
