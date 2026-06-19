@@ -32,7 +32,7 @@ import {
 import { useUserStore } from '../../stores/userStore';
 import { useEEGStore } from '../../stores/eegStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { API_URL } from '../../config/api';
+import { EEG_DOWNLOAD_URL } from '../../config/api';
 import './Dashboard.css';
 
 type TabView = 'overview' | 'history' | 'profile' | 'settings';
@@ -470,18 +470,20 @@ const Dashboard = () => {
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                     <span>Download dan ekstrak EEG Server Package. Lalu double-click file <code>start_eeg.bat</code>. Kenakan Muse 2 dan pastikan Bluetooth aktif.</span>
                                                     <a
-                                                        href={`${API_URL}/downloads/eeg-package`}
+                                                        href={EEG_DOWNLOAD_URL}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
+                                                        download
                                                         style={{
                                                             alignSelf: 'flex-start', background: '#4f46e5',
                                                             color: 'white', border: 'none', borderRadius: '8px',
                                                             padding: '8px 16px', cursor: 'pointer', fontWeight: 600,
                                                             fontSize: '0.85rem', display: 'flex', alignItems: 'center',
-                                                            gap: '6px', transition: 'all 0.2s', flexShrink: 0
+                                                            gap: '6px', transition: 'all 0.2s', flexShrink: 0,
+                                                            textDecoration: 'none'
                                                         }}
                                                     >
-                                                        📋 Download EEG Server Package
+                                                        ⬇ Download EEG Server Package
                                                     </a>
                                                 </div>
                                             ),
