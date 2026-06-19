@@ -31,7 +31,7 @@ EEG_PACKAGE_FILENAME = "fumorive-eeg-server.zip"
 
 # GitHub Releases direct download URL (always points to latest release)
 GITHUB_EEG_DOWNLOAD_URL = (
-    "https://github.com/Apypz/Fumorive/releases/latest/download/fumorive-eeg-server.zip"
+    "https://github.com/Apypz/Fumorive/releases/download/v1.0.0/fumorive-eeg-server.zip"
 )
 
 

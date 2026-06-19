@@ -50,7 +50,7 @@ export const WS_ENDPOINTS = {
 // Download URLs
 // Primary: GitHub Releases direct download (1-click, always latest version)
 // Fallback: Backend-served file (for offline/local development)
-export const EEG_DOWNLOAD_URL = 'https://github.com/Apypz/Fumorive/releases/latest/download/fumorive-eeg-server.zip';
+export const EEG_DOWNLOAD_URL = 'https://github.com/Apypz/Fumorive/releases/download/v1.0.0/fumorive-eeg-server.zip';
 export const DOWNLOAD_ENDPOINTS = {
   EEG_PACKAGE: EEG_DOWNLOAD_URL,
   EEG_PACKAGE_FALLBACK: `${API_URL}/downloads/eeg-package`,
