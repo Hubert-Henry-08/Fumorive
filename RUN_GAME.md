@@ -82,7 +82,7 @@ Firebase digunakan untuk autentikasi Google Sign-In.
 #### A. Firebase Console
 1. Buka [Firebase Console](https://console.firebase.google.com/)
 2. Buat project baru bernama **Fumorive**
-3. Masuk ke **Authentication → Sign-in method → Google** → Enable
+3. Masuk ke **Authentication → Sign-in method → Google** → Enablen
 4. Masuk ke **Project Settings → General → Your apps → Web (`</>`)** → Register app
 5. **Salin Firebase Config** (apiKey, authDomain, projectId, dll.)
 
