@@ -5,9 +5,12 @@ import {
   MeshBuilder,
   PBRMaterial,
   StandardMaterial,
+  DynamicTexture,
   AbstractMesh,
 } from '@babylonjs/core'
 import { LightingSetup } from './LightingSetup'
+import { IndonesiaMap } from './IndonesiaMap'
+import { FORKLIFT_LAYOUT } from '../config/forklift.layout'
 
 interface Collider {
   min: Vector3
@@ -21,7 +24,21 @@ export class SimpleMap {
   private meshes: AbstractMesh[] = []
   private colliders: Collider[] = []
   private spawnPoint: { x: number; z: number; rotationY: number } = { x: 0, z: 0, rotationY: 0 }
-  
+
+  /** Instansi khusus map Ngawi City (HANYA terisi bila map ini dibuat). */
+  private indonesiaMap: IndonesiaMap | null = null
+
+  // Runtime obstacle kendaraan NPC (KHAUSUS Ngawi): lingkaran 2D yang dipakai
+  // agar mobil PEMAIN tidak bisa menembus mobil NPC. Diisi tiap frame oleh
+  // NpcSystem → DemoScene. Tidak mempengaruhi map lain (kosong di Solo/Sriwedari).
+  private ngawiCarObstacles: Array<{ x: number; z: number; r: number }> = []
+
+  // Material dinding latihan (lazy, khusus map forklift-testing)
+  private forkliftWallMat: PBRMaterial | null = null
+
+  // Material strip tepi operational lane (lazy, khusus map forklift-testing)
+  private forkliftLaneEdgeMat: PBRMaterial | null = null
+
   // Map boundaries - diperluas untuk objektif game
   private mapBounds = {
     minX: -400,
@@ -55,6 +72,45 @@ export class SimpleMap {
     const boundaryCheck = this.checkBoundaryCollision(position, radius)
     if (boundaryCheck.collided) {
       return boundaryCheck
+    }
+
+    // Road-corridor constraint KHUSUS Ngawi: pastikan kendaraan pemain hanya
+    // mengemudi di atas aspal (jalan). Tidak menghasilkan violation apa pun—
+    // hanya mendorong kembali pemain ke jalan bila pusat mobil keluar area aspal.
+    if (this.indonesiaMap) {
+      const roadHit = this.checkRoadCorridor(position, radius)
+      if (roadHit.collided) {
+        return roadHit
+      }
+      // Mobil NPC (runtime) sebagai rintangan lingkaran 2D — pemain TIDAK
+      // boleh menembus mobil NPC. Hanya aktif saat map Ngawi (list kosong di map
+      // lain), dan tidak menyentuh collider/map existing.
+      const o = this.ngawiCarObstacles
+      let nCol = -1
+      let nDist = Infinity
+      for (let i = 0; i < o.length; i++) {
+        const dx = position.x - o[i].x
+        const dz = position.z - o[i].z
+        const d2 = dx * dx + dz * dz
+        if (d2 < nDist) {
+          nDist = d2
+          nCol = i
+        }
+      }
+      if (nCol >= 0) {
+        const ob = o[nCol]
+        const dist = Math.sqrt(nDist)
+        const minD = radius + ob.r
+        if (dist < minD) {
+          if (dist > 1e-6) {
+            const nX = (position.x - ob.x) / dist
+            const nZ = (position.z - ob.z) / dist
+            return { collided: true, normal: new Vector3(nX, 0, nZ), penetration: minD - dist }
+          }
+          // pusat pemain tepat di pusat mobil NPC → dorong ke arah +X.
+          return { collided: true, normal: new Vector3(1, 0, 0), penetration: minD }
+        }
+      }
     }
     
     // Check colliders
@@ -111,9 +167,72 @@ export class SimpleMap {
   }
 
   /**
+   * Road-corridor constraint (HANYA dipakai saat map Ngawi aktif).
+   * Jika pusat kendaraan pemain berada di luar semua area aspal (jalan/parkiran),
+   * kendaraan didorong halus kembali menuju tepi aspal terdekat. Tidak menghasilkan
+   * violation. Koreksi posisi dibatasi per-frame agar tidak snap/jitter/terpental.
+   */
+  private checkRoadCorridor(position: Vector3, radius: number): { collided: boolean; normal: Vector3; penetration: number } {
+    const rects = this.indonesiaMap ? this.indonesiaMap.getDrivableRects() : []
+    let bestDist = Infinity
+    let bestX = 0
+    let bestZ = 0
+
+    for (const r of rects) {
+      // clamp ke rect -> titik terdekat pada aspal
+      const nx = Math.max(r.x0, Math.min(position.x, r.x1))
+      const nz = Math.max(r.z0, Math.min(position.z, r.z1))
+      const dx = position.x - nx
+      const dz = position.z - nz
+      const d2 = dx * dx + dz * dz
+      if (d2 < bestDist) {
+        bestDist = d2
+        bestX = nx
+        bestZ = nz
+      }
+    }
+
+    const dist = Math.sqrt(bestDist)
+    // Sudah di atas aspal (atau radius mobil menyentuh aspal) → tidak ada dorongan.
+    if (dist <= radius || !isFinite(dist) || dist <= 1e-6) {
+      return { collided: false, normal: Vector3.Zero(), penetration: 0 }
+    }
+
+    // Arah koreksi: dari posisi mobil MENUJU titik aspal terdekat (kembali ke jalan).
+    // Sebelumnya arahnya terbalik (position - bestPoint) sehingga justru mendorong
+    // mobil makin jauh ke rumput.
+    const nx = (bestX - position.x) / dist
+    const nz = (bestZ - position.z) / dist
+
+    // Koreksi halus: batasi besarnya koreksi per frame agar tidak snap jauh.
+    // Kecepatan yang diarahkan keluar jalan tetap dibatasi oleh damping normal
+    // CarPhysics sehingga kendaraan "tertahan" halus di batas aspal.
+    const MAX_PULL = 2.5
+    const pull = Math.min(dist - radius, MAX_PULL)
+    if (pull <= 0) {
+      return { collided: false, normal: Vector3.Zero(), penetration: 0 }
+    }
+    return {
+      collided: true,
+      normal: new Vector3(nx, 0, nz),
+      penetration: pull,
+    }
+  }
+
+  /**
    * Create Solo City map - urban environment with buildings, roads, and obstacles
    */
   createSoloCity(): void {
+    this.buildSoloCityLayout()
+    console.log('[SimpleMap] Solo City map created with', this.colliders.length, 'colliders')
+  }
+
+  /**
+   * Layout Solo City (shared builder).
+   * Dipakai oleh createSoloCity() DAN createHinoDutroTesting() (Solo clone).
+   * Urutan builder dijaga identik agar Solo City TIDAK berubah.
+   */
+  private buildSoloCityLayout(): void {
     this.createGround()
     this.createRoads()
     this.createRoadBarriers()
@@ -123,8 +242,6 @@ export class SimpleMap {
     this.createBushes()
     this.createSpawnStation()
     this.createMapBoundaryWalls()
-    
-    console.log('[SimpleMap] Solo City map created with', this.colliders.length, 'colliders')
   }
 
   /**
@@ -144,11 +261,377 @@ export class SimpleMap {
     console.log('[SimpleMap] Sriwedari Park map created with', this.colliders.length, 'colliders')
   }
 
+  /**
+   * Create Ngawi City map - lingkungan khas Indonesia (kampung/pedesaan kota).
+   * Layout & objek dibangun di modul terpisah IndonesiaMap agar mudah
+   * mengganti placeholder primitive dengan model 3D final nanti.
+   */
+  createNgawiCity(): void {
+    const im = new IndonesiaMap(this.scene, this.lightingSetup ?? undefined)
+    const spawn = im.buildNgawi()
+
+    // Gabungkan mesh & collider dari IndonesiaMap ke SimpleMap
+    this.meshes.push(...im.getMeshes())
+    this.colliders.push(...im.getColliders())
+
+    this.indonesiaMap = im
+    this.spawnPoint = { x: spawn.x, z: spawn.z, rotationY: spawn.rotationY }
+
+    console.log('[SimpleMap] Ngawi City map created, spawn at', this.spawnPoint)
+  }
+
+  /** Kembalikan instansi IndonesiaMap bila map saat ini adalah Ngawi City. */
+  getIndonesiaMap(): IndonesiaMap | null {
+    return this.indonesiaMap
+  }
+
+  /**
+   * Create Forklift Testing map - area simulasi pekerjaan forklift.
+   * Layout (sumbu Z menuju utara/+Z):
+   * - Beton apron luas (±120 m, z -110..150) dengan boundary wall
+   * - START (spawn) di selatan menghadap +Z
+   * - STORAGE AREA (pad + 12 cargo, grid dipasang oleh ForkliftCargoTest)
+   * - OPERATIONAL LANE (koridor tengah lebar, strip tepi kuning)
+   * - MANEUVER AREA (cone zig-zag)
+   * - OBSTACLE / SAFETY AREA (gerbang barier dengan celah tengah)
+   * - DROP-OFF AREA (12 target slot, dipasang oleh ForkliftCargoTest)
+   * - FINISH (banner di dekat dinding utara)
+   * Semua koordinat diambil dari FORKLIFT_LAYOUT (single source of truth).
+   */
+  createForkliftTesting(): void {
+    this.createForkliftGround()
+    this.createForkliftBoundary()
+    this.createForkliftStartArea()
+    this.createForkliftStorageArea()
+    this.createForkliftOperationalLane()
+    this.createForkliftManeuverArea()
+    this.createForkliftObstacleArea()
+    this.createForkliftFinishArea()
+
+    const s = FORKLIFT_LAYOUT.spawn
+    this.spawnPoint = { x: s.x, z: s.z, rotationY: s.rotationY }
+
+    console.log('[SimpleMap] Forklift Testing map created with', this.colliders.length, 'colliders')
+  }
+
+  /**
+   * Create Hino Dutro Testing map - CLONE dari Solo City.
+   *
+   * Hino Dutro Testing ≈ Solo City: seluruh struktur map (ground, jalan,
+   * barriers, bangunan, lake, trees, bushes, spawn station, boundary walls)
+   * dibangun ulang oleh builder yang sama dengan Solo City
+   * (buildSoloCityLayout) → layout, spawn & environment IDENTIK dengan
+   * Solo City. Satu-satunya perbedaan adalah KENDARAAN PEMAIN: truck Hino
+   * Dutro (truk_refference_rig.glb) yang dimuat DemoScene.loadTruckModel().
+   * Solo City TIDAK diubah (ADD, DON'T BREAK).
+   */
+  createHinoDutroTesting(): void {
+    this.buildSoloCityLayout()
+
+    // Hide the canopy, pillars, and back wall above/around the spawn area
+    // so the truck spawns under open sky. Floor, stripes, bollards,
+    // driveway, and all road/building environment remain unchanged.
+    this.hideSpawnCanopy()
+
+    console.log('[SimpleMap] Hino Dutro Testing map created (Solo City clone, no canopy) with', this.colliders.length, 'colliders')
+  }
+
+  /**
+   * Motor Testing: Solo City clone dengan kendaraan pemain diganti motor.
+   * Layout identik Solo City, canopy spawn di-hide agar motor muncul di
+   * bawah langit terbuka.
+   */
+  createMotorTesting(): void {
+    this.buildSoloCityLayout()
+    this.hideSpawnCanopy()
+    console.log('[SimpleMap] Motor Testing map created (Solo City clone, no canopy) with', this.colliders.length, 'colliders')
+  }
+
+  // ============================================
+  // FORKLIFT TESTING SPECIFIC CREATION METHODS
+  // ============================================
+
+  private createForkliftGround(): void {
+    const ground = MeshBuilder.CreateGround('forkliftGround', {
+      width: 240,
+      height: 260,
+      subdivisions: 8,
+    }, this.scene)
+
+    const groundMat = new PBRMaterial('forkliftGroundMat', this.scene)
+    groundMat.albedoColor = new Color3(0.6, 0.6, 0.58) // Beton abu-abu
+    groundMat.metallic = 0.1
+    groundMat.roughness = 0.9
+    ground.material = groundMat
+    ground.receiveShadows = true
+    ground.position.y = -0.02
+    ground.position.z = 20
+
+    this.meshes.push(ground)
+  }
+
+  private createForkliftBoundary(): void {
+    // Dinding pembatas mengelilingi apron latihan
+    const walls = [
+      { x: 0, z: 150, width: 238, depth: 1 },    // North
+      { x: 0, z: -108, width: 238, depth: 1 },   // South
+      { x: 117, z: 20, width: 1, depth: 258 },   // East
+      { x: -117, z: 20, width: 1, depth: 258 },  // West
+    ]
+
+    walls.forEach((wall) => {
+      this.createForkliftWall(wall.x, wall.z, wall.width, wall.depth)
+    })
+  }
+
+  /** START AREA — pad spawn forklift + sign. */
+  private createForkliftStartArea(): void {
+    const area = FORKLIFT_LAYOUT.start
+
+    const padMat = new PBRMaterial('forkliftStartPadMat', this.scene)
+    padMat.albedoColor = new Color3(0.42, 0.47, 0.45)
+    padMat.metallic = 0.05
+    padMat.roughness = 0.9
+
+    const pad = MeshBuilder.CreateGround('forkliftStartPad', {
+      width: area.halfW * 2,
+      height: area.halfD * 2,
+      subdivisions: 1,
+    }, this.scene)
+    pad.position = new Vector3(area.x, 0.005, area.z)
+    pad.material = padMat
+    pad.receiveShadows = true
+    this.meshes.push(pad)
+
+    // Penanda garis identifikasi START
+    this.createForkliftSign('START \u2022 FORKLIFT OPERATION', 'forkliftStartSign', 17.5, area.z, -Math.PI / 2)
+  }
+
+  /** STORAGE AREA — sign identitas (pad & cargo dibangun ForkliftCargoTest). */
+  private createForkliftStorageArea(): void {
+    this.createForkliftSign('STORAGE AREA', 'forkliftStorageSign', 17.5, FORKLIFT_LAYOUT.storagePad.z, -Math.PI / 2)
+  }
+
+  /** OPERATIONAL LANE — koridor tengah tanpa dinding (strip tepi kuning). */
+  private createForkliftOperationalLane(): void {
+    const edgeMat = this.getForkliftLaneEdgeMaterial()
+    const zStart = FORKLIFT_LAYOUT.laneZStart
+    const zEnd = FORKLIFT_LAYOUT.laneZEnd
+    const zc = (zStart + zEnd) / 2
+    const depth = zEnd - zStart
+
+    for (const s of [-1, 1]) {
+      const strip = MeshBuilder.CreateBox(`forkliftLaneEdge_${s > 0 ? 'e' : 'w'}`, {
+        width: 0.22,
+        height: 0.05,
+        depth,
+      }, this.scene)
+      strip.position = new Vector3(s * FORKLIFT_LAYOUT.laneEdgeX, 0.03, zc)
+      strip.material = edgeMat
+      strip.receiveShadows = true
+      this.meshes.push(strip)
+    }
+
+    this.createForkliftLaneArrows()
+    this.createForkliftSign('OPERATIONAL LANE', 'forkliftLaneSign', 17.5, 20, -Math.PI / 2)
+  }
+
+  /** Chevron penunjuk arah (utara) di pintu keluar storage. */
+  private createForkliftLaneArrows(): void {
+    const mat = this.getForkliftLaneEdgeMaterial()
+    const pts = [
+      { x: 0, z: -14 },
+      { x: 0, z: -8 },
+      { x: 0, z: -2 },
+    ]
+    pts.forEach((pos, i) => {
+      for (const s of [-1, 1]) {
+        const arm = MeshBuilder.CreateBox(`forkliftLaneChevron_${i}_${s > 0 ? 'r' : 'l'}`, {
+          width: 1.7,
+          height: 0.05,
+          depth: 0.35,
+        }, this.scene)
+        arm.position = new Vector3(pos.x, 0.035, pos.z)
+        arm.rotation.y = s * (Math.PI / 4)
+        arm.material = mat
+        this.meshes.push(arm)
+      }
+    })
+  }
+
+  /** MANEUVER AREA — cone zig-zag di tengah operational lane. */
+  private createForkliftManeuverArea(): void {
+    const coneMat = new PBRMaterial('forkliftConeMat', this.scene)
+    coneMat.albedoColor = new Color3(0.9, 0.35, 0.1) // Oranye
+    coneMat.metallic = 0
+    coneMat.roughness = 0.7
+
+    const stripeMat = new PBRMaterial('forkliftConeStripeMat', this.scene)
+    stripeMat.albedoColor = new Color3(1, 1, 1)
+    stripeMat.metallic = 0
+    stripeMat.roughness = 0.7
+
+    FORKLIFT_LAYOUT.maneuverCones.forEach((pos, i) => {
+      const cone = MeshBuilder.CreateCylinder(`forkliftCone_${i}`, {
+        diameterTop: 0.12,
+        diameterBottom: 0.55,
+        height: 1.0,
+        tessellation: 12,
+      }, this.scene)
+      cone.position = new Vector3(pos.x, 0.5, pos.z)
+      cone.material = coneMat
+      this.lightingSetup?.addShadowCaster(cone)
+      this.meshes.push(cone)
+      this.addBoxCollider(cone)
+
+      const stripe = MeshBuilder.CreateBox(`forkliftConeStripe_${i}`, {
+        width: 0.16,
+        height: 0.12,
+        depth: 0.16,
+      }, this.scene)
+      stripe.position = new Vector3(pos.x, 0.85, pos.z)
+      stripe.material = stripeMat
+      this.meshes.push(stripe)
+    })
+
+    this.createForkliftSign('MANEUVER AREA', 'forkliftManeuverSign', -17.5, 76, Math.PI / 2)
+  }
+
+  /** OBSTACLE / SAFETY AREA — gerbang barier kuning dengan celah tengah 6 m. */
+  private createForkliftObstacleArea(): void {
+    const o = FORKLIFT_LAYOUT.obstacle
+    const segHalfW = (o.halfW - o.gapHalf) / 2 // 6.5 per segmen
+    const segW = o.halfW - o.gapHalf // 13
+
+    const barrierMat = new PBRMaterial('forkliftObstacleMat', this.scene)
+    barrierMat.albedoColor = new Color3(0.9, 0.72, 0.1) // Kuning safety
+    barrierMat.metallic = 0.2
+    barrierMat.roughness = 0.6
+
+    const capMat = new PBRMaterial('forkliftObstacleCapMat', this.scene)
+    capMat.albedoColor = new Color3(0.8, 0.3, 0.2)
+    capMat.metallic = 0.2
+    capMat.roughness = 0.5
+
+    for (const s of [-1, 1]) {
+      const cx = s * (o.gapHalf + segHalfW)
+      const barrier = MeshBuilder.CreateBox(`forkliftObstacle_${s > 0 ? 'e' : 'w'}`, {
+        width: segW,
+        height: o.height,
+        depth: 0.35,
+      }, this.scene)
+      barrier.position = new Vector3(cx, o.height / 2, o.z)
+      barrier.material = barrierMat
+      barrier.receiveShadows = true
+      this.lightingSetup?.addShadowCaster(barrier)
+      this.meshes.push(barrier)
+      this.addBoxCollider(barrier)
+
+      // Strip atas merah agar gerbang mudah terlihat (marking safety)
+      const cap = MeshBuilder.CreateBox(`forkliftObstacleCap_${s > 0 ? 'e' : 'w'}`, {
+        width: segW + 0.1,
+        height: 0.14,
+        depth: 0.4,
+      }, this.scene)
+      cap.position = new Vector3(cx, o.height + 0.07, o.z)
+      cap.material = capMat
+      cap.receiveShadows = true
+      this.meshes.push(cap)
+      this.addBoxCollider(cap)
+    }
+
+    this.createForkliftSign('OBSTACLE / SAFETY AREA', 'forkliftObstacleSign', -17.5, o.z, Math.PI / 2)
+  }
+
+  /** FINISH — banner di dekat dinding utara (facing selatan). */
+  private createForkliftFinishArea(): void {
+    this.createForkliftSign('FINISH', 'forkliftFinishSign', FORKLIFT_LAYOUT.finish.x, FORKLIFT_LAYOUT.finish.z, Math.PI, 14, 1.6)
+  }
+
+  /** Sign/plang teks (DynamicTexture, double-sided, tanpa collider). */
+  private createForkliftSign(
+    text: string,
+    name: string,
+    x: number,
+    z: number,
+    rotY: number,
+    width = 6,
+    height = 1.2
+  ): void {
+    const plane = MeshBuilder.CreatePlane(name, { width, height }, this.scene)
+    plane.position = new Vector3(x, 3.0, z)
+    plane.rotation.y = rotY
+
+    const tex = new DynamicTexture(`${name}_tex`, { width: 512, height: 128 }, this.scene, true)
+    const ctx = tex.getContext() as unknown as CanvasRenderingContext2D
+    ctx.fillStyle = '#1d2333'
+    ctx.fillRect(0, 0, 512, 128)
+    ctx.strokeStyle = '#e5d43c'
+    ctx.lineWidth = 8
+    ctx.strokeRect(6, 6, 500, 116)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 48px Arial'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, 256, 64)
+    tex.update()
+
+    const mat = new StandardMaterial(`${name}_mat`, this.scene)
+    mat.diffuseTexture = tex
+    mat.diffuseColor = Color3.White()
+    mat.emissiveColor = Color3.White()
+    mat.backFaceCulling = false
+    plane.material = mat
+
+    this.meshes.push(plane)
+  }
+
+  private getForkliftLaneEdgeMaterial(): PBRMaterial {
+    if (!this.forkliftLaneEdgeMat) {
+      this.forkliftLaneEdgeMat = new PBRMaterial('forkliftLaneEdgeMat', this.scene)
+      this.forkliftLaneEdgeMat.albedoColor = new Color3(0.9, 0.75, 0.15) // Kuning safety
+      this.forkliftLaneEdgeMat.metallic = 0.1
+      this.forkliftLaneEdgeMat.roughness = 0.6
+    }
+    return this.forkliftLaneEdgeMat
+  }
+
+  private getForkliftWallMaterial(): PBRMaterial {
+    if (!this.forkliftWallMat) {
+      this.forkliftWallMat = new PBRMaterial('forkliftWallMat', this.scene)
+      this.forkliftWallMat.albedoColor = new Color3(0.35, 0.45, 0.55) // Baja kebiruan
+      this.forkliftWallMat.metallic = 0.4
+      this.forkliftWallMat.roughness = 0.6
+    }
+    return this.forkliftWallMat
+  }
+
+  private createForkliftWall(x: number, z: number, width: number, depth: number): void {
+    const wall = MeshBuilder.CreateBox(`forkliftWall_${x}_${z}`, {
+      width: width,
+      height: 2,
+      depth: depth,
+    }, this.scene)
+    wall.position = new Vector3(x, 1, z)
+    wall.material = this.getForkliftWallMaterial()
+    wall.receiveShadows = true
+    this.lightingSetup?.addShadowCaster(wall)
+    this.meshes.push(wall)
+    this.addBoxCollider(wall)
+  }
+
+  /**
+   * Set daftar lingkaran posisi kendaraan NPC (runtime) untuk map Ngawi.
+   * Dipanggil tiap frame oleh DemoScene dari NpcSystem. Kosong pada map lain.
+   */
+  setNgawiCarObstacles(obstacles: Array<{ x: number; z: number; r: number }>): void {
+    this.ngawiCarObstacles = obstacles
+  }
+
   // Legacy method - creates Solo City
   createRaceTrack(): void {
     this.createSoloCity()
   }
-
   createCityMap(): void {
     this.createSoloCity()
   }
@@ -541,7 +1024,6 @@ export class SimpleMap {
 
     // === RING ROAD (Outer Circle) ===
     // Ring road segments forming a large circle/square around central district
-    const ringRadius = 280
     
     // North ring segment (extended to reach ring_east at x=284)
     this.createRoadSegment('ring_north', 2, 310, 564, ringRoadWidth, roadMaterial)
@@ -2104,6 +2586,23 @@ export class SimpleMap {
     })
   }
 
+  /**
+   * Tambah collider AABB statis dari mesh eksternal (dipakai sistem pihak
+   * ketiga, mis. ForkliftCargoTest, untuk guard rail). Aditif & backward-
+   * compatible: tidak mengubah collider/map yang sudah ada.
+   */
+  addStaticCollider(mesh: AbstractMesh): void {
+    this.addBoxCollider(mesh)
+  }
+
+  /**
+   * Hapus collider yang sebelumnya didaftarkan via addStaticCollider.
+   * Hanya menghapus entri yang mesh-nya sama (untuk cleanup/dispose).
+   */
+  removeStaticCollider(mesh: AbstractMesh): void {
+    this.colliders = this.colliders.filter((c) => c.mesh !== mesh)
+  }
+
   // ============================================
   // SPAWN STATION / GARAGE
   // ============================================
@@ -2306,6 +2805,34 @@ export class SimpleMap {
     this.createBuildingLabel('Fumorive Station', stationX, stationZ, 7)
 
     console.log(`[SimpleMap] Spawn station created at (${stationX}, ${stationZ}), exit faces EAST → road_center_v`)
+  }
+
+  /**
+   * Hide the canopy/roof, pillars, and back wall above/around the spawn
+   * station.  Used by Hino Dutro Testing so the truck spawns under open sky
+   * while keeping all other station elements (floor, stripes, bollards,
+   * driveway).  Also removes colliders for hidden meshes so there are no
+   * invisible walls.  Safe to call even if meshes don't exist.
+   */
+  private hideSpawnCanopy(): void {
+    const meshNames = [
+      'stationRoof',           // flat roof slab (30 × 0.4 × 24 m)
+      'stationRoofEdge',       // yellow edge trim on east lip
+      'stationBackWall',       // back wall behind the car (west side)
+      'stationPillar_0',       // support pillars
+      'stationPillar_1',
+      'stationPillar_2',
+      'stationPillar_3',
+      'label_Fumorive Station', // floating station label above spawn
+    ]
+    for (const name of meshNames) {
+      const mesh = this.scene.getMeshByName(name)
+      if (mesh) {
+        mesh.isVisible = false
+        // Remove collider so there is no invisible collision box
+        this.removeStaticCollider(mesh)
+      }
+    }
   }
 
   /**

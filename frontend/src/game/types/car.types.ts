@@ -26,6 +26,10 @@ export interface ThirdPersonCameraConfig {
   upperRadiusLimit: number
   inertia: number
   followSpeed: number
+  /** Forward offset (meter) sepanjang arah heading mobil untuk look-at target.
+   *  Default 0 (fokus di pusat mobil). Nilai positif menggeser titik pandang
+   *  ke depan kendaraan (mis. forklift agar pandangan ke jalan lebih luas). */
+  forwardTargetOffset?: number
 }
 
 /**
@@ -39,6 +43,10 @@ export interface FirstPersonCameraConfig {
   lookAheadDistance: number
   minZ: number
   maxZ: number
+  /** Vertical offset above the firstPersonReferenceNode (meters). Only used when setFirstPersonReference() is called. */
+  referenceHeightOffset?: number
+  /** Height offset for the look-at target (meters). Used for look-ahead target elevation. */
+  targetHeightOffset?: number
 }
 
 /**
@@ -82,6 +90,7 @@ export interface CameraPositionConfig {
     beta: number
     lowerRadiusLimit: number
     upperRadiusLimit: number
+    forwardTargetOffset?: number
   }
   firstPerson: {
     forwardOffset: number
@@ -89,6 +98,10 @@ export interface CameraPositionConfig {
     sideOffset: number
     fov: number
     lookAheadDistance: number
+    /** Near clipping plane distance (opsional). */
+    minZ?: number
+    /** Far clipping plane distance (opsional). */
+    maxZ?: number
   }
 }
 
@@ -99,7 +112,7 @@ export interface CameraPositionConfig {
 /**
  * Available control modes
  */
-export type ControlMode = 'keyboard' | 'mouse'
+export type ControlMode = 'keyboard' | 'mouse' | 'wheel'
 
 /**
  * Key bindings mapping
@@ -153,6 +166,9 @@ export interface CarPhysicsConfig {
   acceleration: number
   reverseAcceleration: number
   engineBraking: number
+  /** Skala kecepatan maksimum per gigi (1 = bawaan). Khusus kendaraan lambat
+   *  seperti forklift: 0.75 → gigi tertinggi = 30 m/s. Default 1 (tanpa efek). */
+  gearMaxSpeedScale?: number
   
   // Braking
   brakeForce: number
@@ -161,6 +177,11 @@ export interface CarPhysicsConfig {
   maxSteerAngle: number
   steeringSpeed: number
   turnRadius: number
+  /** Offset pivot steering (meter) dari pusat mesh sepanjang arah forward.
+   *  0 = berputar di pusat (perilaku mobil biasa).
+   *  Negatif = pivot di belakang pusat (rear-wheel steering, forklift).
+   *  Default 0 → tidak ada perubahan untuk kendaraan lain. */
+  steerPivotOffset?: number
   
   // Grip & Drift
   gripFront: number

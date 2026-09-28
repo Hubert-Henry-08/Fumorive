@@ -9,7 +9,7 @@
  * - Body dynamics (roll and pitch)
  */
 
-import { Vector3, AbstractMesh } from '@babylonjs/core'
+import { Vector3, AbstractMesh, TransformNode } from '@babylonjs/core'
 import type { CarPhysicsConfig, CarInputState, CarPhysicsState } from '../../types'
 import { DEFAULT_PHYSICS_CONFIG } from '../../config'
 import type { SimpleMap } from '../SimpleMap'
@@ -44,6 +44,11 @@ export class CarPhysics {
   private slipAngle: number = 0
   private bodyRoll: number = 0
   private bodyPitch: number = 0
+
+  // Pergeseran posisi akibat pivot steering di belakang pusat mesh (khusus
+  // kendaraan dengan config.steerPivotOffset ≠ 0, mis. forklift rear-wheel
+  // steering). Default 0 → tidak berpengaruh untuk kendaraan lain.
+  private pivotDisplacement: Vector3 = Vector3.Zero()
 
   // === TRANSMISSION SYSTEM ===
   private transmissionMode: 'automatic' | 'manual' = 'automatic'
@@ -266,7 +271,8 @@ export class CarPhysics {
     }
 
     // === FORWARD GEARS (1-5) ===
-    const [gearMaxSpeed, accelMult] = CarPhysics.GEAR_TABLE[gear]
+    const gearMaxSpeed = this.getGearMaxSpeed(gear)
+    const accelMult = CarPhysics.GEAR_TABLE[gear][1]
     
     // Throttle
     if (input.throttle > 0) {
@@ -416,7 +422,20 @@ export class CarPhysics {
     speed: number
   ): void {
     // Update heading (car body rotation)
-    this.heading += turnRate * dt
+    // REAR-WHEEL STEERING (scoped): jika config.steerPivotOffset != 0, rotasi
+    // body dilakukan di sekitar titik pivot bergeser dari pusat mesh (forklift =
+    // pivot di poros belakang). Origin digeser tiap frame agar front berayun dan
+    // tail tidak ikut menggeser — menghasilkan feel forklift, bukan mobil biasa.
+    const rightBefore = this.getRightVector()
+    const pivotOffset = this.config.steerPivotOffset ?? 0
+    const dHeading = turnRate * dt
+    this.heading += dHeading
+
+    if (pivotOffset !== 0 && Math.abs(dHeading) > 1e-5) {
+      this.pivotDisplacement = rightBefore.scale(-pivotOffset * dHeading)
+    } else {
+      this.pivotDisplacement = Vector3.Zero()
+    }
     
     // Get new direction vectors AFTER heading change
     const newForward = this.getForwardVector()
@@ -482,7 +501,14 @@ export class CarPhysics {
       this.verticalVelocity * dt,
       this.velocity.z * dt
     )
-    let newPosition = mesh.position.add(movement)
+    // Use world position for physics (works for both parented and non-parented meshes)
+    const worldPos = mesh.getAbsolutePosition()
+    let newPosition = worldPos.add(movement)
+
+    // Pergeseran pivot (rear-wheel steering forklift) — bagian dari gerakan fisik
+    if (this.pivotDisplacement.lengthSquared() > 1e-12) {
+      newPosition = newPosition.add(this.pivotDisplacement)
+    }
     
     // Check collision with map
     if (this.map) {
@@ -518,7 +544,13 @@ export class CarPhysics {
       this.isGrounded = false
     }
     
-    mesh.position = newPosition
+    // Write position: if mesh has a TransformNode parent (axis correction wrapper),
+    // write to parent position (world space). Otherwise write to mesh directly.
+    if (mesh.parent instanceof TransformNode) {
+      mesh.parent.position = newPosition
+    } else {
+      mesh.position = newPosition
+    }
   }
 
   /**
@@ -578,6 +610,11 @@ export class CarPhysics {
 
   getSteerAngle(): number {
     return this.steerAngle * (180 / Math.PI)
+  }
+
+  /** Sudut steering dalam radian (untuk visual rear-wheel steering). */
+  getSteerAngleRad(): number {
+    return this.steerAngle
   }
 
   getIsGrounded(): boolean {
@@ -689,7 +726,7 @@ export class CarPhysics {
 
       // Upshift: when speed exceeds threshold of current gear
       if (this.currentGear < CarPhysics.MAX_GEAR) {
-        const [gearMax] = CarPhysics.GEAR_TABLE[this.currentGear]
+        const gearMax = this.getGearMaxSpeed(this.currentGear)
         if (absForwardSpeed > gearMax * CarPhysics.AUTO_UPSHIFT_RPM) {
           this.currentGear++
           this.autoShiftTimer = CarPhysics.SHIFT_COOLDOWN
@@ -699,7 +736,7 @@ export class CarPhysics {
 
       // Downshift: when speed drops below threshold
       if (this.currentGear > 1) {
-        const [lowerGearMax] = CarPhysics.GEAR_TABLE[this.currentGear - 1]
+        const lowerGearMax = this.getGearMaxSpeed(this.currentGear - 1)
         if (absForwardSpeed < lowerGearMax * CarPhysics.AUTO_DOWNSHIFT_RPM) {
           this.currentGear--
           this.autoShiftTimer = CarPhysics.SHIFT_COOLDOWN
@@ -733,9 +770,17 @@ export class CarPhysics {
       return
     }
 
-    const [gearMax] = CarPhysics.GEAR_TABLE[this.currentGear]
-    const ratio = Math.min(1, absSpeed / gearMax)
+    const [gearMaxRaw] = CarPhysics.GEAR_TABLE[this.currentGear]
+    const gearMax = gearMaxRaw * (this.config.gearMaxSpeedScale ?? 1)
+    const ratio = Math.min(1, absSpeed / Math.max(0.1, gearMax))
     this.rpm = idleRPM + (maxRPM - idleRPM) * ratio
+  }
+
+  /**
+   * Kecepatan maksimum per gigi (sudah memperhitungkan gearMaxSpeedScale).
+   */
+  private getGearMaxSpeed(gear: number): number {
+    return CarPhysics.GEAR_TABLE[gear][0] * (this.config.gearMaxSpeedScale ?? 1)
   }
 
   /**
@@ -753,6 +798,7 @@ export class CarPhysics {
     this.slipAngle = 0
     this.bodyRoll = 0
     this.bodyPitch = 0
+    this.pivotDisplacement = Vector3.Zero()
     this.currentGear = 0
     this.rpm = 800
     this.autoShiftTimer = 0

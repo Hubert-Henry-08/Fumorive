@@ -21,6 +21,7 @@
  */
 
 import { Vector3 } from '@babylonjs/core'
+import type { MapType } from '../types'
 
 interface RoadSegment {
   name: string
@@ -53,9 +54,105 @@ export class WrongWayDetector {
   private readonly MIN_SPEED_CHECK = 3.0            // m/s (~11 km/h) - don't check when slow/stopped
   private readonly HEADING_TOLERANCE = 0.6          // ~34° tolerance for heading angle (cosine threshold)
 
-  constructor() {
-    this.initSoloCityRoads()
-    this.initJunctions()
+  constructor(mapType: MapType = 'solo-city') {
+    if (mapType === 'ngawi-city') {
+      this.initNgawiCityRoads()
+      this.initNgawiCityJunctions()
+    } else if (mapType === 'forklift-testing') {
+      // Forklift Testing map TIDAK punya jalan umum & lalu lintas →
+      // deteksi wrong-way dinonaktifkan (roads & junctions kosong).
+    } else {
+      // solo-city & hino-dutro-testing (clone Solo City) memakai road &
+      // junction yang sama persis dengan Solo City.
+      this.initSoloCityRoads()
+      this.initJunctions()
+    }
+  }
+
+  /**
+   * Register road segments untuk map Ngawi City.
+   * (Left-hand-traffic Indonesia sama dengan Solo City.)
+   *
+   * PENTING: Koordinat di bawah WAJIB sinkron dengan tabel `ROADS` di
+   * IndonesiaMap.ts (sumber kebenaran). Layout terbaru Ngawi memakai ring luar
+   * ±245 (ekspansi 1,5×). Jangan menyalin dari tool audit lama yang memakai ±200.
+   *
+   * Catatan pemetaan orientasi → addRoad(name, cx, cz, halfWidth, halfHeight):
+   *  - Jalan H (membentang sumbu X): halfWidth = halfX (bentang X),
+   *    halfHeight = 8 (setengah lebar jalan 16m, sumbu Z).
+   *  - Jalan V (membentang sumbu Z): halfWidth = 8 (setengah lebar jalan 16m,
+   *    sumbu X), halfHeight = halfZ (bentang Z).
+   */
+  private initNgawiCityRoads(): void {
+    // Ring road luar (loop tertutup) — ±245, lebar 16m (half-width sisi tipis 8).
+    this.addRoad('ring_n', 0, 245, 245, 8, 'EW')
+    this.addRoad('ring_s', 0, -245, 245, 8, 'EW')
+    this.addRoad('ring_w', -245, 0, 8, 245, 'NS')
+    this.addRoad('ring_e', 245, 0, 8, 245, 'NS')
+    // Poros utama (ujung tersambung ring)
+    this.addRoad('main_h', 0, 0, 245, 8, 'EW')
+    this.addRoad('main_v', 0, 0, 8, 245, 'NS')
+    // Ring tengah (loop tertutup)
+    this.addRoad('i_n', 0, 60, 60, 8, 'EW')
+    this.addRoad('i_s', 0, -60, 60, 8, 'EW')
+    this.addRoad('i_w', -60, 0, 8, 60, 'NS')
+    this.addRoad('i_e', 60, 0, 8, 60, 'NS')
+    // Jalan sekunder (alternatif antar zona) — ±245 sampai ring luar
+    this.addRoad('s_n', 0, 140, 245, 8, 'EW')
+    this.addRoad('s_s', 0, -140, 245, 8, 'EW')
+    this.addRoad('s_w', -140, 0, 8, 245, 'NS')
+    this.addRoad('s_e', 140, 0, 8, 245, 'NS')
+    // Percabangan permukiman barat & pertokoan timur (connector)
+    this.addRoad('rn', -190, 110, 50, 8, 'EW')
+    this.addRoad('rs', -190, 45, 50, 8, 'EW')
+    this.addRoad('e1', 192.5, 123, 52.5, 8, 'EW')
+    // Zona SPBU/bengkel
+    this.addRoad('spbu_a', 70, 95, 70, 8, 'EW')
+    // Zona sekolah (blok loop)
+    this.addRoad('sch_top', 50, -120, 50, 8, 'EW')
+    this.addRoad('sch_bottom', 50, -160, 50, 8, 'EW')
+    this.addRoad('sch_v', 100, -140, 8, 20, 'NS')
+    // Zona pertokoan timur (band baru sejajar ring_e)
+    this.addRoad('et_a', 195, 0, 8, 245, 'NS')
+    // Zona perkantoran utara (nr_h) & sekolah/lapangan selatan (sr_h)
+    this.addRoad('nr_h', 0, 200, 140, 8, 'EW')
+    this.addRoad('sr_h', 0, -200, 140, 8, 'EW')
+    // Zona perumahan barat-utara / -selatan
+    this.addRoad('wh_1', -195, 182, 50, 8, 'EW')
+    this.addRoad('wh_2', -195, -182, 50, 8, 'EW')
+    // Zona pertokoan timur-utara / -selatan
+    this.addRoad('eh_1', 195, 182, 50, 8, 'EW')
+    this.addRoad('eh_2', 195, -210, 50, 8, 'EW')
+    // Konektor timur-tengah (2 strip pendek)
+    this.addRoad('eh_3', 168, 82, 28, 8, 'EW')
+    this.addRoad('eh_4', 168, -90, 28, 8, 'EW')
+    // Konektor selatan sekolah
+    this.addRoad('sf_v', 100, -180, 8, 20, 'NS')
+  }
+
+  private initNgawiCityJunctions(): void {
+    // Junction dihitung otomatis dari tabel `ROADS` IndonesiaMap.ts (sumber
+    // kebenaran) menggunakan logika roadIntersections() yang sama: semua titik
+    // pertemuan dua jalan yang saling tegak lurus (aspal keduanya benar-benar
+    // bertemu). TIDAK ada koordinat stale ±200 di sini; ring luar memakai ±245.
+    // Wrong-way detection di-pause di dalam zone junction agar tidak salah
+    // mendeteksi saat belok/putar balik.
+    const junctionCoords: [number, number][] = [
+      // Ring luar (±245) — sudut & pertemuan dengan grid/poros/band
+      [-245, -245], [-245, -182], [-245, -140], [-245, 0], [-245, 140], [-245, 182], [-245, 245],
+      [-140, -245], [-140, -200], [-140, -140], [-140, 0], [-140, 45], [-140, 110], [-140, 140], [-140, 200], [-140, 245],
+      [-60, -60], [-60, 0], [-60, 60],
+      [0, -245], [0, -200], [0, -160], [0, -140], [0, -120], [0, -60], [0, 0], [0, 60], [0, 95], [0, 140], [0, 200], [0, 245],
+      [60, -60], [60, 0], [60, 60],
+      [100, -200], [100, -160], [100, -140], [100, -120],
+      [140, -245], [140, -200], [140, -140], [140, -90], [140, 0], [140, 82], [140, 95], [140, 123], [140, 140], [140, 200], [140, 245],
+      [195, -245], [195, -210], [195, -140], [195, -90], [195, 0], [195, 82], [195, 123], [195, 140], [195, 182], [195, 245],
+      // Ring timur × connector e1/eh_1
+      [245, -245], [245, -210], [245, -140], [245, 0], [245, 123], [245, 140], [245, 182], [245, 245],
+    ]
+    for (const [x, z] of junctionCoords) {
+      this.junctions.push({ x, z, radius: 12 })
+    }
   }
 
   /**

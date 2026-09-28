@@ -3,6 +3,7 @@ import { GameEngine, DemoScene } from '../game'
 import { useGameStore } from '../stores/gameStore'
 import { useViolationStore } from '../stores/violationStore'
 import { useWaypointStore } from '../stores/waypointStore'
+import { useCargoStore } from '../stores/cargoStore'
 
 export function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -51,6 +52,7 @@ export function GameCanvas() {
       // Create and initialize demo scene with selected map
       const demoScene = new DemoScene(graphicsConfig, selectedMap)
       sceneRef.current = demoScene
+      ;(window as any).__demoScene = demoScene
 
       // Set camera mode change callback to update UI
       demoScene.setOnCameraModeChange((mode) => {
@@ -75,7 +77,14 @@ export function GameCanvas() {
         }
       })
 
-      await demoScene.init(engine.getContext())
+      try {
+        await demoScene.init(engine.getContext())
+      } catch (error) {
+        // ADD-ONLY safety net: jangan biarkan satu exception di init mematikan
+        // render loop selamanya (gejala: canvas hitam, hanya UI yang terlihat).
+        // Render loop tetap di-start; scene yang sudah ter-bangun tetap ter-render.
+        console.error('[GameCanvas] demoScene.init failed:', error)
+      }
 
       // Start render loop
       let wrongWayViolationCooldown = 0
@@ -137,6 +146,16 @@ export function GameCanvas() {
           }
         }
 
+        // Update cargo delivery progress (khusus forklift-testing) ke store.
+        // Progress cargo TERPISAH dari point pelanggaran (violationStore).
+        if (selectedMap === 'forklift-testing') {
+          useCargoStore.getState().setProgress(
+            demoScene.getCargoDeliveredCount(),
+            demoScene.getCargoTotalCount(),
+            demoScene.isCargoMissionComplete()
+          )
+        }
+
         // Update FPS counter every 0.5 seconds
         if (Math.random() < 0.05) {
           setFps(Math.round(engine.getFPS()))
@@ -166,6 +185,39 @@ export function GameCanvas() {
       engineRef.current.hideInspector()
     }
   }, [showInspector])
+
+  // UI controls are routed to the live scene without rebuilding the game.
+  useEffect(() => {
+    const handleControlMode = (event: Event) => {
+      const mode = (event as CustomEvent<{ mode: 'keyboard' | 'mouse' | 'wheel' }>).detail?.mode
+      if (mode) sceneRef.current?.setControlMode(mode)
+    }
+    const handleWheelSettings = (event: Event) => {
+      sceneRef.current?.updateWheelSettings((event as CustomEvent).detail ?? {})
+    }
+    const handleWheelDetect = (event: Event) => {
+      const kind = (event as CustomEvent<{ kind: 'throttle' | 'brake' }>).detail?.kind
+      if (!kind) return
+      const detected = sceneRef.current?.detectWheelPedal(kind) ?? false
+      window.dispatchEvent(new CustomEvent('fumorive:wheel-calibration-result', { detail: { kind, detected } }))
+    }
+    const handleWheelRestCapture = (event: Event) => {
+      const kind = (event as CustomEvent<{ kind: 'throttle' | 'brake' }>).detail?.kind
+      if (!kind) return
+      const captured = sceneRef.current?.captureWheelPedalRest(kind) ?? false
+      window.dispatchEvent(new CustomEvent('fumorive:wheel-rest-captured', { detail: { kind, captured } }))
+    }
+    window.addEventListener('fumorive:control-mode', handleControlMode)
+    window.addEventListener('fumorive:wheel-settings', handleWheelSettings)
+    window.addEventListener('fumorive:wheel-detect-pedal', handleWheelDetect)
+    window.addEventListener('fumorive:wheel-capture-rest', handleWheelRestCapture)
+    return () => {
+      window.removeEventListener('fumorive:control-mode', handleControlMode)
+      window.removeEventListener('fumorive:wheel-settings', handleWheelSettings)
+      window.removeEventListener('fumorive:wheel-detect-pedal', handleWheelDetect)
+      window.removeEventListener('fumorive:wheel-capture-rest', handleWheelRestCapture)
+    }
+  }, [])
 
   // Initialize on mount
   useEffect(() => {

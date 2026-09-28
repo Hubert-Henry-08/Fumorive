@@ -17,6 +17,9 @@ import { ViolationHUD } from '../ViolationHUD'
 import { WrongWayWarning } from '../WrongWayWarning'
 import { GearHUD } from '../GearHUD'
 import { WaypointHUD } from '../WaypointHUD'
+import { ForkliftCargoHUD } from '../ForkliftCargoHUD'
+import { AircraftHUD } from '../AircraftHUD'
+import { AircraftYokeHUD } from '../AircraftYokeHUD'
 import { TutorialPopup } from '../TutorialPopup'
 import { useGameStore } from '../../stores/gameStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -28,6 +31,7 @@ import '../../App.css'
 export default function Session() {
   const { gameState, setGameState } = useGameStore()
   const { sessionId, initializeSession } = useSessionStore()
+  const selectedMap = useGameStore((s) => s.selectedMap)
   const [showSettings, setShowSettings] = useState(false)
   const [showMapSelection, setShowMapSelection] = useState(true)
   const [gameStarted, setGameStarted] = useState(false)
@@ -120,7 +124,7 @@ export default function Session() {
 
       {/* Tutorial Popup - shown when game first starts */}
       {showTutorial && gameStarted && (
-        <TutorialPopup onClose={() => setShowTutorial(false)} />
+        <TutorialPopup onClose={() => setShowTutorial(false)} mapType={selectedMap} />
       )}
 
       {/* Global Alert Notifications - always active when game started */}
@@ -175,26 +179,37 @@ export default function Session() {
           {/* Controls HUD - shows current control mode and key bindings */}
           <ControlsHUD />
           
-          {/* Speedometer visualization */}
-          <SpeedometerHUD />
-          
-          {/* Gear indicator - next to speedometer */}
-          <GearHUD />
-          
-          {/* Drift Meter visualization */}
-          <DriftMeter />
-          
-          {/* Steering Wheel visualization */}
-          <SteeringWheelHUD />
+          {selectedMap === 'pesawat-testing' ? (
+            <>
+              {/* Aircraft specific HUDs */}
+              <AircraftHUD />
+              <AircraftYokeHUD />
+            </>
+          ) : (
+            <>
+              {/* Car specific HUDs */}
+              <SpeedometerHUD />
+              <GearHUD />
+              <DriftMeter />
+              <SteeringWheelHUD />
+            </>
+          )}
 
-          {/* Violation tracker - next to speedometer */}
-          <ViolationHUD />
+          {selectedMap !== 'pesawat-testing' && (
+            <>
+              {/* Violation tracker - next to speedometer */}
+              <ViolationHUD />
 
-          {/* Wrong-way warning overlay */}
-          <WrongWayWarning />
+              {/* Wrong-way warning overlay */}
+              <WrongWayWarning />
+            </>
+          )}
 
-          {/* Waypoint/Checkpoint navigation HUD */}
+          {/* Waypoint/Checkpoint navigation HUD - shown for all maps */}
           <WaypointHUD />
+
+          {/* Cargo delivery progress & MISSION COMPLETE (khusus forklift-testing) */}
+          {selectedMap === 'forklift-testing' && <ForkliftCargoHUD />}
 
           {/* Camera Fatigue Monitor - bottom right corner */}
           <CameraFatigueMonitor 

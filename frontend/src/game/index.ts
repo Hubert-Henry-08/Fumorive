@@ -61,3 +61,8 @@ export { SimpleMap } from './components/SimpleMap'
 // SCENES
 // ============================================
 export { DemoScene } from './scenes/DemoScene'
+
+// ============================================
+// SYSTEMS
+// ============================================
+export { ForkSystem } from './systems/ForkSystem'

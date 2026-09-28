@@ -11,6 +11,7 @@ import {
   KeyboardEventTypes,
   Camera,
   Vector3,
+  TransformNode,
 } from '@babylonjs/core'
 import type { 
   CameraMode, 
@@ -32,6 +33,7 @@ import { CarPhysics } from './CarPhysics'
 import { CarCameraManager } from './CarCameraManager'
 import { DriftParticleSystem } from './DriftParticleSystem'
 import { EngineAudio } from '../../engine/EngineAudio'
+import { GamepadInputManager, type WheelAction } from '../../engine/GamepadInputManager'
 import type { SimpleMap } from '../SimpleMap'
 
 // Re-export types for backward compatibility
@@ -90,6 +92,9 @@ export class CarController {
   private canvas: HTMLCanvasElement | null = null
   private mouseLastMoveTime: number = 0
   private mouseIdleThreshold: number = 150 // ms before steering starts returning to center
+  private wheelInput = new GamepadInputManager()
+  private wheelActions = new Set<WheelAction>()
+  private wheelPressedActions = new Set<WheelAction>()
   
   // Keyboard steering smoothing
   private keyboardSteeringTarget: number = 0
@@ -216,7 +221,7 @@ export class CarController {
    * Toggle between control modes
    */
   toggleControlMode(): void {
-    this.setControlMode(this.currentControlMode === 'keyboard' ? 'mouse' : 'keyboard')
+    this.setControlMode(this.currentControlMode === 'keyboard' ? 'mouse' : this.currentControlMode === 'mouse' ? 'wheel' : 'keyboard')
   }
 
   /**
@@ -241,6 +246,14 @@ export class CarController {
   getControlMode(): ControlMode {
     return this.currentControlMode
   }
+
+  getWheelStatus(): { supported: boolean; connected: boolean } {
+    return { supported: this.wheelInput.isSupported(), connected: this.wheelInput.isConnected() }
+  }
+
+  updateWheelSettings(settings: Parameters<GamepadInputManager['saveSettings']>[0]): void { this.wheelInput.saveSettings(settings) }
+  detectWheelPedal(kind: 'throttle' | 'brake'): boolean { return this.wheelInput.detectPedalAxis(kind) }
+  captureWheelPedalRest(kind: 'throttle' | 'brake'): boolean { return this.wheelInput.capturePedalRest(kind) }
 
   // === ENGINE CONTROL ===
 
@@ -354,6 +367,24 @@ export class CarController {
   }
 
   /**
+   * Set optional reference node for first-person camera position.
+   * Delegates to CarCameraManager — see its documentation.
+   */
+  setFirstPersonReference(node: TransformNode): void {
+    this.cameraManager.setFirstPersonReference(node)
+  }
+
+  /**
+   * Update first-person camera with custom heading.
+   * Useful for vehicles where visual heading differs from physics heading
+   * (e.g., truck model faces +X but physics forward is +Z).
+   * Only affects first-person camera; other modes continue using physics heading.
+   */
+  updateFirstPersonCamera(heading: number): void {
+    this.cameraManager.updateFirstPersonCameraWithHeading(heading)
+  }
+
+  /**
    * Setup keyboard input handling
    */
   private setupInput(): void {
@@ -430,6 +461,8 @@ export class CarController {
     
     const dt = Math.min(deltaTime, 0.05)
 
+    if (this.currentControlMode === 'wheel') this.updateWheelInput()
+
     // Handle keyboard steering smoothing
     this.updateKeyboardSteering(dt)
     
@@ -464,11 +497,40 @@ export class CarController {
     )
   }
 
+  private updateWheelInput(): void {
+    const wheel = this.wheelInput.read()
+    if (!wheel) {
+      // Safe fallback while keeping the visible selected mode; keyboard remains usable.
+      this.wheelActions.clear()
+      this.wheelPressedActions.clear()
+      return
+    }
+    this.input = wheel.input
+    this.wheelActions = wheel.heldActions
+    this.wheelPressedActions = wheel.actions
+    // Wheel profile is always automatic: one brake pedal stops first and,
+    // once nearly stopped, drives the vehicle backward (no gear controls).
+    if (this.physics.getTransmissionMode() !== 'automatic') this.physics.toggleTransmissionMode()
+    if (wheel.brakeAmount > 0.08 && wheel.input.throttle <= 0.08 && this.physics.getForwardSpeed() <= 0.25) {
+      this.input.throttle = -wheel.brakeAmount
+      this.input.brake = false
+    }
+    if (wheel.actions.has('engine')) void this.toggleEngine()
+    if (wheel.actions.has('camera')) this.toggleCameraMode()
+    if (wheel.actions.has('horn')) this.engineAudio.playHorn()
+    else this.engineAudio.stopHorn()
+  }
+
+  isWheelActionActive(action: WheelAction): boolean { return this.wheelActions.has(action) }
+  /** Returns true once for a newly pressed wheel button. */
+  consumeWheelAction(action: WheelAction): boolean { return this.wheelPressedActions.delete(action) }
+
   /**
    * Update mouse steering input
    */
   private updateKeyboardSteering(dt: number): void {
-    if (this.currentControlMode !== 'keyboard') return
+    // A selected but unplugged wheel must not leave the player unable to steer.
+    if (this.currentControlMode !== 'keyboard' && !(this.currentControlMode === 'wheel' && !this.wheelInput.isConnected())) return
     
     // Smoothly interpolate actual steering toward the target
     const diff = this.keyboardSteeringTarget - this.input.steering
@@ -540,6 +602,11 @@ export class CarController {
     return this.physics.getSteerAngle()
   }
 
+  /** Sudut steering dalam radian (untuk visual rear-wheel steering). */
+  getSteerAngleRad(): number {
+    return this.physics.getSteerAngleRad()
+  }
+
   getSteeringInput(): number {
     return this.input.steering
   }
@@ -549,7 +616,7 @@ export class CarController {
   }
 
   getPosition(): Vector3 {
-    return this.carMesh.position.clone()
+    return this.carMesh.getAbsolutePosition().clone()
   }
 
   getCurrentGear(): number {

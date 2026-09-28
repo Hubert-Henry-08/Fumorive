@@ -82,9 +82,13 @@ export class WaypointMarkers {
 
     waypoints.forEach((wp, index) => {
       const isFirst = index === 0
+      // Checkpoint udara (wp.position.y > 0): marker dibuat MENGAMBANG di
+      // ketinggian — pillar pendek sebagai beacon, ring horizontal sebagai
+      // gerbang. Waypoint darat (y=0) tetap behavior lama (tancap di tanah).
+      const isAir = wp.position.y > 0
 
       // Pillar (vertical cylinder beacon)
-      const pillarHeight = isFirst ? 15 : 10
+      const pillarHeight = isFirst ? (isAir ? 8 : 15) : (isAir ? 5 : 10)
       const pillarDiameter = isFirst ? 2.0 : 1.2
       const pillar = MeshBuilder.CreateCylinder(
         `wp_pillar_${wp.id}`,
@@ -97,13 +101,13 @@ export class WaypointMarkers {
       )
       pillar.position = new Vector3(
         wp.position.x,
-        pillarHeight / 2, // Bottom at ground level
+        isAir ? wp.position.y : pillarHeight / 2, // Darat: bottom di ground
         wp.position.z
       )
       pillar.material = isFirst ? this.activeMaterial : this.upcomingMaterial
       pillar.isPickable = false
 
-      // Ground ring
+      // Ground ring / gerbang udara
       const ring = MeshBuilder.CreateTorus(
         `wp_ring_${wp.id}`,
         {
@@ -113,7 +117,7 @@ export class WaypointMarkers {
         },
         this.scene
       )
-      ring.position = new Vector3(wp.position.x, 0.15, wp.position.z)
+      ring.position = new Vector3(wp.position.x, isAir ? wp.position.y : 0.15, wp.position.z)
       ring.material = isFirst ? this.activeMaterial : this.upcomingMaterial
       ring.isPickable = false
 

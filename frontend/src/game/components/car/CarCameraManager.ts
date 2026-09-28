@@ -14,6 +14,7 @@ import {
   UniversalCamera,
   Camera,
   AbstractMesh,
+  TransformNode,
   PointerEventTypes,
   Observer,
   PointerInfo,
@@ -23,7 +24,7 @@ import { DEFAULT_CAMERA_CONFIG } from '../../config'
 
 export class CarCameraManager {
   private scene: Scene
-  private carMesh: AbstractMesh
+  private carMesh: TransformNode
   private config: CameraConfig
   private canvas: HTMLCanvasElement | null = null
   
@@ -35,12 +36,15 @@ export class CarCameraManager {
   // State
   private currentMode: CameraMode = 'third-person'
   private onModeChange: ((mode: CameraMode) => void) | null = null
+
+  // Optional reference node for first-person camera (e.g. driver head position)
+  private firstPersonReferenceNode: TransformNode | null = null
   
   // Wheel zoom - using BabylonJS observer and DOM handler
   private wheelObserver: Observer<PointerInfo> | null = null
   private wheelPreventHandler: ((e: WheelEvent) => void) | null = null
 
-  constructor(scene: Scene, carMesh: AbstractMesh, config?: Partial<CameraConfig>) {
+  constructor(scene: Scene, carMesh: TransformNode, config?: Partial<CameraConfig>) {
     this.scene = scene
     this.carMesh = carMesh
     this.config = this.mergeConfig(config)
@@ -80,12 +84,17 @@ export class CarCameraManager {
   private setupThirdPersonCamera(): void {
     const tpConfig = this.config.thirdPerson
     
+    const forwardOffset = tpConfig.forwardTargetOffset ?? 0
+    const initFwdX = forwardOffset !== 0 ? Math.sin(this.carMesh.rotation.y) * forwardOffset : 0
+    const initFwdZ = forwardOffset !== 0 ? Math.cos(this.carMesh.rotation.y) * forwardOffset : 0
+    const initialTarget = this.carMesh.getAbsolutePosition().add(new Vector3(initFwdX, tpConfig.targetHeightOffset, initFwdZ))
+
     this.thirdPersonCamera = new ArcRotateCamera(
       'thirdPersonCamera',
       tpConfig.alpha,
       tpConfig.beta,
       tpConfig.distance,
-      this.carMesh.position.add(new Vector3(0, tpConfig.targetHeightOffset, 0)),
+      initialTarget,
       this.scene
     )
     
@@ -133,7 +142,7 @@ export class CarCameraManager {
       freeConfig.alpha,
       freeConfig.beta,
       freeConfig.distance,
-      this.carMesh.position.add(new Vector3(0, freeConfig.targetHeightOffset, 0)),
+      this.carMesh.getAbsolutePosition().add(new Vector3(0, freeConfig.targetHeightOffset, 0)),
       this.scene
     )
     
@@ -216,6 +225,48 @@ export class CarCameraManager {
    */
   onModeChanged(callback: (mode: CameraMode) => void): void {
     this.onModeChange = callback
+  }
+
+  /**
+   * Set optional reference node for first-person camera position.
+   * When set, the first-person camera will track this node's world position
+   * instead of calculating from fixed offsets. Useful for placing the camera
+   * at a specific point in the vehicle model hierarchy (e.g. driver's head).
+   */
+  setFirstPersonReference(node: TransformNode): void {
+    this.firstPersonReferenceNode = node
+  }
+
+  /**
+   * Update first-person camera with custom heading (used for vehicles
+   * where visual model orientation differs from physics heading).
+   * Only affects first-person camera; other modes use regular update().
+   */
+  updateFirstPersonCameraWithHeading(heading: number): void {
+    if (!this.firstPersonCamera) return
+    
+    const fpConfig = this.config.firstPerson
+    
+    // Calculate forward direction from heading
+    const forward = new Vector3(Math.sin(heading), 0, Math.cos(heading))
+    
+    let cameraPosition: Vector3
+    
+    if (this.firstPersonReferenceNode) {
+      const refPos = this.firstPersonReferenceNode.getAbsolutePosition()
+      const heightOff = fpConfig.referenceHeightOffset ?? 0
+      cameraPosition = refPos.add(new Vector3(0, heightOff, 0))
+    } else {
+      const right = new Vector3(Math.cos(heading), 0, -Math.sin(heading))
+      cameraPosition = this.carMesh.getAbsolutePosition()
+        .add(forward.scale(fpConfig.forwardOffset))
+        .add(right.scale(fpConfig.sideOffset))
+        .add(new Vector3(0, fpConfig.heightOffset, 0))
+    }
+    
+    const lookTarget = cameraPosition.add(forward.scale(fpConfig.lookAheadDistance))
+    this.firstPersonCamera.position.copyFrom(cameraPosition)
+    this.firstPersonCamera.setTarget(lookTarget)
   }
 
   /**
@@ -327,7 +378,10 @@ export class CarCameraManager {
     if (!this.thirdPersonCamera) return
     
     const tpConfig = this.config.thirdPerson
-    const targetPosition = this.carMesh.position.add(new Vector3(0, tpConfig.targetHeightOffset, 0))
+    const forwardOffset = tpConfig.forwardTargetOffset ?? 0
+    const fwdX = forwardOffset !== 0 ? Math.sin(heading) * forwardOffset : 0
+    const fwdZ = forwardOffset !== 0 ? Math.cos(heading) * forwardOffset : 0
+    const targetPosition = this.carMesh.getAbsolutePosition().add(new Vector3(fwdX, tpConfig.targetHeightOffset, fwdZ))
     
     // Smooth follow target
     this.thirdPersonCamera.target = Vector3.Lerp(
@@ -351,14 +405,25 @@ export class CarCameraManager {
     
     const fpConfig = this.config.firstPerson
     
-    // Calculate camera position in local car space
+    // Calculate forward direction from heading
     const forward = new Vector3(Math.sin(heading), 0, Math.cos(heading))
-    const right = new Vector3(Math.cos(heading), 0, -Math.sin(heading))
     
-    const cameraPosition = this.carMesh.position
-      .add(forward.scale(fpConfig.forwardOffset))
-      .add(right.scale(fpConfig.sideOffset))
-      .add(new Vector3(0, fpConfig.heightOffset, 0))
+    let cameraPosition: Vector3
+    
+    if (this.firstPersonReferenceNode) {
+      // Use the reference node's world position + optional height offset
+      const refPos = this.firstPersonReferenceNode.getAbsolutePosition()
+      const heightOff = fpConfig.referenceHeightOffset ?? 0
+      cameraPosition = refPos.add(new Vector3(0, heightOff, 0))
+    } else {
+      // Fallback: calculate from fixed offsets relative to carMesh
+      const right = new Vector3(Math.cos(heading), 0, -Math.sin(heading))
+      
+      cameraPosition = this.carMesh.getAbsolutePosition()
+        .add(forward.scale(fpConfig.forwardOffset))
+        .add(right.scale(fpConfig.sideOffset))
+        .add(new Vector3(0, fpConfig.heightOffset, 0))
+    }
     
     const lookTarget = cameraPosition.add(forward.scale(fpConfig.lookAheadDistance))
     
@@ -374,7 +439,7 @@ export class CarCameraManager {
     if (!this.freeCamera) return
     
     const freeConfig = this.config.free
-    const targetPosition = this.carMesh.position.add(new Vector3(0, freeConfig.targetHeightOffset, 0))
+    const targetPosition = this.carMesh.getAbsolutePosition().add(new Vector3(0, freeConfig.targetHeightOffset, 0))
     
     // Smooth follow target only
     this.freeCamera.target = Vector3.Lerp(

@@ -8,11 +8,14 @@ import {
   AlertTriangle,
   Gamepad2,
   Target,
+  Package,
   Keyboard,
 } from 'lucide-react'
+import { useCargoStore } from '../stores/cargoStore'
 
 interface TutorialPopupProps {
   onClose: () => void
+  mapType?: string
 }
 
 interface TutorialPage {
@@ -22,10 +25,12 @@ interface TutorialPage {
   color: string
 }
 
-export function TutorialPopup({ onClose }: TutorialPopupProps) {
+export function TutorialPopup({ onClose, mapType }: TutorialPopupProps) {
   const [currentPage, setCurrentPage] = useState(0)
+  const cargoDelivered = useCargoStore((s) => s.delivered)
+  const cargoTotal = useCargoStore((s) => s.total)
 
-  const pages: TutorialPage[] = [
+  const genericPages: TutorialPage[] = [
     {
       icon: <Target size={36} />,
       title: 'Misi: Selesaikan Rute',
@@ -233,6 +238,189 @@ export function TutorialPopup({ onClose }: TutorialPopupProps) {
       ),
     },
   ]
+
+  // =====================================================================
+  // KHUSUS forklift-testing — popup MISSION & KONTROL (ADD, DON'T BREAK)
+  // =====================================================================
+  const forkliftMissionPage: TutorialPage = {
+    icon: <Package size={36} />,
+    title: 'Misi: Pindahkan Semua Cargo',
+    color: '#22c55e',
+    content: (
+      <div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'rgba(34, 197, 94, 0.12)',
+            borderRadius: '12px',
+            padding: '14px 16px',
+            border: '1px solid rgba(34, 197, 94, 0.3)',
+            marginBottom: '1rem',
+          }}
+        >
+          <span style={{ color: '#86efac', fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.08em' }}>PROGRESS CARGO</span>
+          <span style={{ color: '#fff', fontSize: '1.6rem', fontWeight: 800 }}>
+            {cargoDelivered} / {cargoTotal}
+          </span>
+        </div>
+
+        <div
+          style={{
+            background: 'rgba(34, 197, 94, 0.15)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(34, 197, 94, 0.3)',
+            marginBottom: '1rem',
+          }}
+        >
+          <h4 style={{ margin: '0 0 8px', color: '#86efac', fontSize: '0.95rem' }}>🎯 Tujuan Utama</h4>
+          <p style={{ margin: 0, color: '#cbd5e1', fontSize: '0.9rem', lineHeight: '1.6' }}>
+            Pindahkan seluruh <strong style={{ color: '#86efac' }}>12 cargo</strong> dari area penyimpanan ke area penempatan menggunakan forklift.
+          </p>
+        </div>
+
+        <h4 style={{ margin: '0 0 10px', color: '#86efac', fontSize: '0.95rem' }}>🛠️ Cara Menyelesaikan</h4>
+        <div style={{ display: 'grid', gap: '8px' }}>
+          {[
+            { n: '1', t: 'Ambil Cargo', d: 'Arahkan forklift ke cargo dan masukkan fork ke bagian bawah cargo.' },
+            { n: '2', t: 'Angkat Cargo', d: 'Gunakan T untuk menaikkan fork dan G untuk menurunkannya.' },
+            { n: '3', t: 'Atur Posisi Fork', d: 'Gunakan Y untuk tilt maju dan H untuk tilt mundur.' },
+            { n: '4', t: 'Bawa Cargo', d: 'Bawa cargo menuju area drop-off.' },
+            { n: '5', t: 'Tempatkan Cargo', d: 'Letakkan cargo pada target yang tersedia.' },
+            { n: '6', t: 'Selesaikan Misi', d: 'Pindahkan seluruh 12 cargo untuk menyelesaikan misi.' },
+          ].map((s) => (
+            <div
+              key={s.n}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <span
+                style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#22c55e26', color: '#86efac', border: '1px solid #22c55e55', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.78rem', flexShrink: 0 }}
+              >
+                {s.n}
+              </span>
+              <div>
+                <div style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 700 }}>{s.t}</div>
+                <div style={{ color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.5 }}>{s.d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: 'rgba(34, 197, 94, 0.1)', borderRadius: '10px', padding: '10px 12px', border: '1px solid rgba(34, 197, 94, 0.2)', marginTop: '12px' }}>
+          <p style={{ margin: 0, color: '#86efac', fontSize: '0.8rem', lineHeight: 1.6 }}>
+            🗺️ <strong>Alur Area:</strong> START / SPAWN → STORAGE AREA → PICKUP → OPERATIONAL → MANEUVER → DROP-OFF AREA → 12 / 12 → MISSION COMPLETE
+          </p>
+        </div>
+      </div>
+    ),
+  }
+
+  const forkliftControlPage: TutorialPage = {
+    icon: <Keyboard size={36} />,
+    title: 'Kontrol Kendaraan',
+    color: '#f59e0b',
+    content: (
+      <div>
+        <h4 style={{ margin: '0 0 10px', color: '#fcd34d', fontSize: '0.9rem' }}>KONTROL KENDARAAN</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1.2rem' }}>
+          {[
+            { key: 'W', desc: 'Maju', color: '#10b981' },
+            { key: 'S', desc: 'Mundur', color: '#ef4444' },
+            { key: 'A', desc: 'Belok Kiri', color: '#3b82f6' },
+            { key: 'D', desc: 'Belok Kanan', color: '#3b82f6' },
+            { key: 'SPACE', desc: 'Rem', color: '#f59e0b' },
+          ].map((ctrl) => (
+            <div
+              key={ctrl.key}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <kbd style={{ background: ctrl.color, color: '#fff', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, fontFamily: 'monospace', minWidth: '56px', textAlign: 'center', boxShadow: `0 2px 6px ${ctrl.color}40` }}>
+                {ctrl.key}
+              </kbd>
+              <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{ctrl.desc}</span>
+            </div>
+          ))}
+        </div>
+
+        <h4 style={{ margin: '0 0 10px', color: '#c4b5fd', fontSize: '0.9rem' }}>KONTROL FORKLIFT</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1rem' }}>
+          {[
+            { key: 'T', desc: 'Fork Naik', color: '#8b5cf6' },
+            { key: 'G', desc: 'Fork Turun', color: '#8b5cf6' },
+            { key: 'Y', desc: 'Tilt Maju', color: '#06b6d4' },
+            { key: 'H', desc: 'Tilt Mundur', color: '#06b6d4' },
+            { key: 'R', desc: 'Reset Cargo', color: '#ef4444' },
+          ].map((ctrl) => (
+            <div
+              key={ctrl.key}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <kbd style={{ background: ctrl.color, color: '#fff', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, fontFamily: 'monospace', minWidth: '56px', textAlign: 'center', boxShadow: `0 2px 6px ${ctrl.color}40` }}>
+                {ctrl.key}
+              </kbd>
+              <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{ctrl.desc}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: 'rgba(245, 158, 11, 0.1)', borderRadius: '10px', padding: '12px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+          <p style={{ margin: 0, color: '#fcd34d', fontSize: '0.82rem', lineHeight: 1.6 }}>
+            💡 ESC = Pause Game (sistem). Hindari tabrakan — collision menambah <strong>POIN pelanggaran</strong> (sistem existing, bukan reward cargo).
+          </p>
+        </div>
+      </div>
+    ),
+  }
+
+  const forkliftAlertPage: TutorialPage = {
+    icon: <AlertTriangle size={36} />,
+    title: 'Sistem Peringatan & Skor',
+    color: '#ef4444',
+    content: (
+      <div>
+        <p style={{ fontSize: '0.95rem', lineHeight: '1.6', color: '#e2e8f0', marginBottom: '1rem' }}>
+          Sistem akan memberikan peringatan otomatis saat mendeteksi kelelahan dari gabungan data EEG dan kamera.
+        </p>
+        <div style={{ display: 'grid', gap: '10px', marginBottom: '1rem' }}>
+          <div style={{ background: 'rgba(239, 68, 68, 0.12)', borderRadius: '10px', padding: '14px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+            <h4 style={{ margin: '0 0 8px', color: '#fca5a5', fontSize: '0.9rem' }}>⚠️ Jenis Alert</h4>
+            <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+              {[
+                { level: 'INFO', color: '#3b82f6', desc: 'Tanda awal kelelahan ringan' },
+                { level: 'WARNING', color: '#f59e0b', desc: 'Penurunan konsentrasi terdeteksi' },
+                { level: 'CRITICAL', color: '#ef4444', desc: 'Kelelahan berat — segera istirahat!' },
+              ].map(({ level, color, desc }) => (
+                <div key={level} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ background: color, color: '#fff', padding: '2px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, minWidth: '75px', textAlign: 'center' }}>
+                    {level}
+                  </span>
+                  <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(245, 158, 11, 0.12)', borderRadius: '10px', padding: '14px', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+            <h4 style={{ margin: '0 0 6px', color: '#fcd34d', fontSize: '0.9rem' }}>📋 Fusion Score</h4>
+            <p style={{ margin: 0, color: '#cbd5e1', fontSize: '0.85rem', lineHeight: '1.6' }}>
+              Skor kelelahan gabungan dari EEG (otak) + Kamera (wajah). Ditampilkan di kiri bawah layar saat bermain.
+            </p>
+          </div>
+        </div>
+        <div style={{ background: 'rgba(16, 185, 129, 0.1)', borderRadius: '10px', padding: '12px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+          <p style={{ margin: 0, color: '#6ee7b7', fontSize: '0.85rem' }}>
+            ✅ Saat 12/12 cargo terpasang (MISSION COMPLETE), kamu akan melihat <strong>ringkasan sesi</strong> dengan statistik lengkap performa dan kelelahan.
+          </p>
+        </div>
+      </div>
+    ),
+  }
+
+  const pages: TutorialPage[] =
+    mapType === 'forklift-testing'
+      ? [forkliftMissionPage, forkliftControlPage, genericPages[2], genericPages[3], forkliftAlertPage]
+      : genericPages
 
   const currentTutorial = pages[currentPage]
   const isLastPage = currentPage === pages.length - 1

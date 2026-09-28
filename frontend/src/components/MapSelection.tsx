@@ -24,6 +24,36 @@ const maps: MapInfo[] = [
     description: 'Taman terbuka yang luas dengan sedikit obstacle. Sempurna untuk berlatih dan menguji kendaraan dengan bebas.',
     thumbnail: '🌳',
   },
+  {
+    id: 'ngawi-city' as MapType,
+    name: 'Ngawi City',
+    description: 'Lingkungan khas Indonesia dengan permukiman, ruko, warung, bengkel, SPBU, sekolah & pejalan kaki yang menyeberang.',
+    thumbnail: '🏘️',
+  },
+  {
+    id: 'forklift-testing' as MapType,
+    name: 'Forklift Testing',
+    description: 'Simulasi kerja forklift: angkut 12 cargo dari Storage Area ke Drop-Off Area melewati lane, maneuver & obstacle. Mission complete saat 12/12.',
+    thumbnail: '🚜',
+  },
+  {
+    id: 'hino-dutro-testing' as MapType,
+    name: 'Hino Dutro Testing',
+    description: 'Area latihan mengemudi truck Hino Dutro: jalan raya + persimpangan (ring road & avenue). Selesaikan rute checkpoint untuk melatih manuver truk besar.',
+    thumbnail: '🚛',
+  },
+  {
+    id: 'motor-testing' as MapType,
+    name: 'Motor Testing',
+    description: 'Solo City dengan kendaraan pemain diganti motor. Latih kemampuan berkendara motor di jalanan kota.',
+    thumbnail: '🏍️',
+  },
+  {
+    id: 'pesawat-testing' as MapType,
+    name: 'Pesawat Testing',
+    description: 'Area testing penerbangan dengan landasan pacu, apron, dan ruang udara yang luas. Kendaraan pemain diganti pesawat Vultee BT-13 Valiant.',
+    thumbnail: '✈️',
+  },
 ]
 
 interface MapSelectionProps {
@@ -175,15 +205,15 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    padding: '3rem 1.5rem',
     zIndex: 1000,
   },
   container: {
     maxWidth: '900px',
-    width: '90%',
-    padding: '2rem',
+    width: '100%',
+    margin: '0 auto',
     textAlign: 'center',
   },
   title: {

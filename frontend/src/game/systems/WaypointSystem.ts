@@ -82,8 +82,10 @@ export interface WaypointSessionData {
  * - ring_west:      x=-286, z range [-500, 300]
  */
 
-function createWaypoint(id: number, x: number, z: number, roadName: string, radius = 12, label?: string): Waypoint {
-  return { id, position: new Vector3(x, 0, z), radius, roadName, label }
+function createWaypoint(id: number, x: number, z: number, roadName: string, radius = 12, label?: string, y = 0): Waypoint {
+  // y = ketinggian (unit ~meter). Untuk map darat default 0 (XZ-only);
+  // untuk map pesawat-testing bisa > 0 → checkpoint udara.
+  return { id, position: new Vector3(x, y, z), radius, roadName, label }
 }
 
 // --- Route 1: City Center Loop (short, 8 checkpoints) ---
@@ -211,7 +213,101 @@ const SOLO_ROUTE_6: WaypointRoute = {
 }
 
 // ============================================
-// ROUTE REGISTRY (Solo City only)
+// NGAWI CITY ROUTES
+// ============================================
+
+// Waypoint positions di Jalan Ngawi City (ring + ring tengah + sekunder + zona),
+// semua DI ATAS JALAN. Jalan (koordinat TERKINI, sinkron IndonesiaMap.ts ±245):
+//  - ring luar: ring_n z=245, ring_s z=-245, ring_w x=-245, ring_e x=245
+//  - poros: main_h z=0 (x -245..245), main_v x=0 (z -245..245)
+//  - ring tengah: i_n z=60, i_s z=-60, i_w x=-60, i_e x=60
+//  - sekunder: s_n z=140, s_s z=-140, s_w x=-140, s_e x=140 (bentang sampai ±245)
+//  - percabangan: rn cz=110 cx=-190 halfX=50 (x -240..-140), rs cz=45 cx=-190 halfX=50,
+//    e1 cz=123 cx=192.5 halfX=52.5 (x 140..245)
+//  - spbu_a cz=95 cx=70 halfX=70 (x 0..140); sekolah sch_top z=-120, sch_bottom z=-160,
+//    sch_v x=100 (z -160..-120); et_a x=195; nr_h z=200; sr_h z=-200
+// Spawn di dalam PARKIRAN luas selatan jalan rs (±-165,24), menghadap utara (+Z)
+// menuju jalan; bukan di (-170,0).
+// Checkpoint pertama SENGAJA dijauhkan dari spawn (>=150m).
+
+const NGAWI_ROUTE_1: WaypointRoute = {
+  id: 'ngawi-pintas-kota',
+  name: 'Rute Pintas Kota',
+  description: 'Putaran mengelilingi pusat & ring tengah: sekunder, main, loop i, perumahan barat.',
+  mapType: 'ngawi-city',
+  waypoints: [
+    createWaypoint(1, 0, 140,    's_n', 12, 'Sekunder Utara'),
+    createWaypoint(2, 140, 140,  's_n', 14, 'Simpang Timur-Utara'),
+    createWaypoint(3, 140, 60,   's_e', 12, 'Pertokoan Timur'),
+    createWaypoint(4, 140, -60,  's_e', 12, 'Timur Selatan'),
+    createWaypoint(5, 60, -60,   'i_s', 12, 'Loop Tenggara'),
+    createWaypoint(6, 0, 0,      'main_v', 14, 'Simpang Utama'),
+    createWaypoint(7, -60, 60,   'i_n', 12, 'Loop Barat-Utara'),
+    createWaypoint(8, -140, 60,  's_w', 12, 'Barat Tengah'),
+    createWaypoint(9, -140, 45,  'rs', 12, 'Permukiman Timur-Barat'),
+    createWaypoint(10, -200, 45, 'rs', 12, 'Pintu Ring Barat'),
+  ],
+}
+
+const NGAWI_ROUTE_2: WaypointRoute = {
+  id: 'ngawi-utara-kantor',
+  name: 'Rute Utara & Perkantoran',
+  description: 'Menyusuri ring atas, permukiman barat (kopdes), dan jalan utama ke pusat.',
+  mapType: 'ngawi-city',
+  waypoints: [
+    createWaypoint(1, 100, 140,  's_n', 12, 'Sekunder Utara-Timur'),
+    createWaypoint(2, 100, 245,  'ring_n', 12, 'Ring Utara'),
+    createWaypoint(3, -100, 245, 'ring_n', 12, 'Ring Utara-Barat'),
+    createWaypoint(4, -100, 140, 's_n', 12, 'Sekunder Utara-Barat'),
+    createWaypoint(5, -170, 110, 'rn', 12, 'Permukiman Utara (Kopdes)'),
+    createWaypoint(6, -200, 110, 'rn', 12, 'Ring Barat-Utara'),
+    createWaypoint(7, -200, 45,  'rs', 12, 'Ring Barat-Tengah'),
+    createWaypoint(8, -140, 45,  'rs', 12, 'Permukiman'),
+    createWaypoint(9, 0, 0,      'main_v', 14, 'Simpang Utama'),
+    createWaypoint(10, 100, 0,   'main_h', 12, 'Finish Pertokoan'),
+  ],
+}
+
+const NGAWI_ROUTE_3: WaypointRoute = {
+  id: 'ngawi-sekolah-spbu',
+  name: 'Rute Sekolah & SPBU',
+  description: 'Pertokoan timur, kawasan sekolah (zebra), dan SPBU/bengkel.',
+  mapType: 'ngawi-city',
+  waypoints: [
+    createWaypoint(1, 60, 140,   's_n', 12, 'Sekunder Utara'),
+    createWaypoint(2, 140, 123,  'e1', 12, 'Pertokoan Timur'),
+    createWaypoint(3, 245, 123,  'e1', 12, 'Ring Timur-Tengah'),
+    createWaypoint(4, 245, -60,  'ring_e', 12, 'Ring Timur-Selatan'),
+    createWaypoint(5, 140, -140, 's_e', 14, 'Selatan-Timur'),
+    createWaypoint(6, 100, -140, 'sch_v', 12, 'Sekolah'),
+    createWaypoint(7, 0, -120,   'sch_top', 12, 'Depan Sekolah (Zebra)'),
+    createWaypoint(8, 0, 95,     'spbu_a', 12, 'Kawasan SPBU'),
+    createWaypoint(9, 100, 95,   'spbu_a', 12, 'SPBU Timur'),
+    createWaypoint(10, 140, 140, 's_e', 14, 'Finish Timur'),
+  ],
+}
+
+const NGAWI_ROUTE_4: WaypointRoute = {
+  id: 'ngawi-ring-explore',
+  name: 'Rute Eksplorasi Ring',
+  description: 'Satu putaran penuh ring road dengan percabangan ring tengah & sekunder.',
+  mapType: 'ngawi-city',
+  waypoints: [
+    createWaypoint(1, 60, 140,   's_n', 12, 'Sekunder Utara'),
+    createWaypoint(2, 180, 245,  'ring_n', 12, 'Ring Utara-Timur'),
+    createWaypoint(3, 245, 180,  'ring_e', 14, 'Ring Timur'),
+    createWaypoint(4, 245, 60,   'ring_e', 12, 'Ring Timur-Tengah'),
+    createWaypoint(5, 120, -245, 'ring_s', 12, 'Ring Selatan'),
+    createWaypoint(6, -120, -245,'ring_s', 12, 'Ring Selatan-Barat'),
+    createWaypoint(7, -245, -120,'ring_w', 12, 'Ring Barat-Selatan'),
+    createWaypoint(8, -245, 60,  'ring_w', 12, 'Ring Barat-Tengah'),
+    createWaypoint(9, -140, 110, 'rn', 12, 'Permukiman Utara-Barat'),
+    createWaypoint(10, 0, 0,     'main_v', 14, 'Finish Simpang Utama'),
+  ],
+}
+
+// ============================================
+// ROUTE REGISTRY
 // ============================================
 
 const SOLO_CITY_ROUTES: WaypointRoute[] = [
@@ -223,26 +319,80 @@ const SOLO_CITY_ROUTES: WaypointRoute[] = [
   SOLO_ROUTE_6,
 ]
 
+const NGAWI_CITY_ROUTES: WaypointRoute[] = [
+  NGAWI_ROUTE_1,
+  NGAWI_ROUTE_2,
+  NGAWI_ROUTE_3,
+  NGAWI_ROUTE_4,
+]
+
+// ============================================
+// PESAWAT TESTING ROUTES
+// ============================================
+
+// Rute sirkuit penerbangan (flight circuit) KOMPAK untuk uji terbang pesawat.
+// SELURUH rute berada DI SEKITAR bandara + kota (layout COMPACT Task 10):
+//   - Runway x=0, z -260..240; spawn (0,-200) heading 0 (+Z = utara).
+//   - Kota timur x≈150..204, z -250..240 (rumah ≤6m, kantor ≤9m)→ CP ≥15m.
+// POLA trafik bandara (searah jarum jam): Takeoff(+Z di runway) → Climb →
+// Crosswind (kota utara) → Downwind (sisi timur kota) → Base (kembali ke
+// bandara) → Final Approach (+Z sejajar runway x=0) → Landing (tepat sebelum
+// area touchdown ≈ spawn). 10 checkpoint UDARA, ketinggian nanjak 3→25m lalu
+// turun 25→1.5m. Semua koordinat dalam area airport+kota (x -30..200,
+// z -330..230) — tidak keluar jauh dari map. radius per-CP dikecilkan (16-24)
+// sesuai skala compact; urutan/aktivasi/logika radius GLOBAL tidak diubah.
+const PESAWAT_ROUTE_1: WaypointRoute = {
+  id: 'pesawat-flight-circuit',
+  name: 'Sirkuit Penerbangan Kompak',
+  description: 'Sirkuit pendek 10 checkpoint udara di sekitar bandara & kota: Takeoff → Climb → City Circuit → Base → Final Approach → Landing.',
+  mapType: 'pesawat-testing',
+  waypoints: [
+    createWaypoint(1, 0, -140,   'air', 20, 'CP1 — Takeoff', 3),
+    createWaypoint(2, 20, 140,   'air', 22, 'CP2 — Climb', 15),
+    createWaypoint(3, 150, 230,  'air', 24, 'CP3 — Area Kota (Utara)', 25),
+    createWaypoint(4, 200, 90,   'air', 24, 'CP4 — Sisi Kota (Timur)', 25),
+    createWaypoint(5, 185, -180, 'air', 24, 'CP5 — Putaran Kota (Selatan)', 18),
+    createWaypoint(6, 100, -250, 'air', 24, 'CP6 — Kembali ke Bandara', 12),
+    createWaypoint(7, -30, -330, 'air', 24, 'CP7 — Downwind / Persiapan Approach', 10),
+    createWaypoint(8, 0, -295,   'air', 22, 'CP8 — Final Approach', 8),
+    createWaypoint(9, 0, -250,   'air', 20, 'CP9 — Descent', 4),
+    createWaypoint(10, 0, -215,  'air', 16, 'CP10 — Final (Siap Mendarat)', 1.5),
+  ],
+}
+
+const PESAWAT_TESTING_ROUTES: WaypointRoute[] = [
+  PESAWAT_ROUTE_1,
+]
+
 /**
- * Get all available routes (Solo City)
+ * Get all available routes for a specific map
  */
-export function getRoutesForMap(_mapType: MapType): WaypointRoute[] {
+export function getRoutesForMap(mapType: MapType): WaypointRoute[] {
+  if (mapType === 'ngawi-city') {
+    return NGAWI_CITY_ROUTES
+  }
+  if (mapType === 'pesawat-testing') {
+    return PESAWAT_TESTING_ROUTES
+  }
+  // hino-dutro-testing adalah CLONE Solo City → pakai route Solo City.
   return SOLO_CITY_ROUTES
 }
 
 /**
- * Get a random route (Solo City only)
+ * Get a random route for a specific map
  */
-export function getRandomRoute(_mapType: MapType): WaypointRoute {
-  const idx = Math.floor(Math.random() * SOLO_CITY_ROUTES.length)
-  return SOLO_CITY_ROUTES[idx]
+export function getRandomRoute(mapType: MapType): WaypointRoute {
+  const routes = getRoutesForMap(mapType)
+  const idx = Math.floor(Math.random() * routes.length)
+  return routes[idx]
 }
 
 /**
- * Get a specific route by ID
+ * Get a specific route by ID (any map)
  */
 export function getRouteById(routeId: string): WaypointRoute | undefined {
-  return SOLO_CITY_ROUTES.find(r => r.id === routeId)
+  const all = [...SOLO_CITY_ROUTES, ...NGAWI_CITY_ROUTES, ...PESAWAT_TESTING_ROUTES]
+  return all.find(r => r.id === routeId)
 }
 
 // ============================================
@@ -319,9 +469,16 @@ export class WaypointSystem {
     }
 
     const activeWaypoint = this.route.waypoints[this.currentIndex]
+    // Map pesawat-testing memakai deteksi JARAK 3D (termasuk ketinggian) karena
+    // checkpoint udara/altitude. Map darat lain tetap XZ-only (y di-nol-kan).
+    const useAltitude = this.route.mapType === 'pesawat-testing'
     const distance = Vector3.Distance(
-      new Vector3(carPosition.x, 0, carPosition.z),
-      new Vector3(activeWaypoint.position.x, 0, activeWaypoint.position.z)
+      new Vector3(carPosition.x, useAltitude ? carPosition.y : 0, carPosition.z),
+      new Vector3(
+        activeWaypoint.position.x,
+        useAltitude ? activeWaypoint.position.y : 0,
+        activeWaypoint.position.z
+      )
     )
 
     if (distance <= activeWaypoint.radius) {
@@ -417,9 +574,14 @@ export class WaypointSystem {
   getDistanceToActive(carPosition: Vector3): number {
     const active = this.getActiveWaypoint()
     if (!active) return -1
+    const useAltitude = this.route.mapType === 'pesawat-testing'
     return Vector3.Distance(
-      new Vector3(carPosition.x, 0, carPosition.z),
-      new Vector3(active.position.x, 0, active.position.z)
+      new Vector3(carPosition.x, useAltitude ? carPosition.y : 0, carPosition.z),
+      new Vector3(
+        active.position.x,
+        useAltitude ? active.position.y : 0,
+        active.position.z
+      )
     )
   }
 
